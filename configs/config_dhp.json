@@ -1,6 +1,6 @@
 {
     "name": "pan_transformer",
-    "experim_name": "Experiments/NAS_Skip_Original_Average_Pooling_0.65_step_size_1000",
+    "experim_name": "Experiments/test",
     "train_dataset": "pavia_dataset",
     "train_batch_size": 2,
     "val_batch_size": 1,
@@ -8,7 +8,7 @@
     "loss_type": "L1",
     "spatial_loss": true,
     "spatial_avg_method": "GAP",
-    "alpha": 0.65,
+    "alpha": 0.6,
 
     "optimizer": {
         "type": "adam",
@@ -17,7 +17,7 @@
             "weight_decay": 1e-4,
             "momentum": 0.9
         },
-        "step_size": 1000,
+        "step_size": 2000,
         "gamma": 0.1
     },
 

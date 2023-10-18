@@ -1,7 +1,7 @@
 {
     "name": "pan_transformer",
-    "experim_name": "Experiments/Pavia",
-    "model": "kitenetwithsk",
+    "experim_name": "Experiments/Kitenet_attention",
+    "model": "attentionkitenet",
     "N_modules": 1,
     "train_dataset": "pavia_dataset",
     "is_DHP_MS": false,

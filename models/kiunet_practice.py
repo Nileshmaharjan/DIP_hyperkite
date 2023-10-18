@@ -203,35 +203,20 @@ class attentionkitenet(nn.Module):
         self.is_DHP_MS = config["is_DHP_MS"]
         self.in_channels = config[config["train_dataset"]]["spectral_bands"] + 1
         self.out_channels = config[config["train_dataset"]]["spectral_bands"]
-        filters = [32, 64, 128]
+        self.N_Filters = 64
+        self.N_modules = config["N_modules"]
 
-        # ENCODER FILTERS
-        self.encoder1 = nn.Conv2d(self.in_channels, filters[0], 3, stride=1, padding=1)
-        self.ebn1 = nn.BatchNorm2d(filters[0])
-        self.encoder2 = nn.Conv2d(filters[0], filters[1], 3, stride=1, padding=1)
-        self.ebn2 = nn.BatchNorm2d(filters[1])
-        self.encoder3 = nn.Conv2d(filters[1], filters[2], 3, stride=1, padding=1)
-        self.ebn3 = nn.BatchNorm2d(filters[2])
+        self.encoder1 = nn.Conv2d(self.in_channels, 32, 3, stride=1, padding=1)  # b, 16, 10, 10
+        self.encoder2 = nn.Conv2d(32, 64, 3, stride=1, padding=1)  # b, 8, 3, 3
+        self.encoder3 = nn.Conv2d(64, 128, 3, stride=1, padding=1)
 
-        # BOTTELENECK FILTERS
-        self.endec_conv = nn.Conv2d(filters[2], filters[2], 3, stride=1, padding=1)
-        self.endec_bn = nn.BatchNorm2d(filters[2])
+        self.decoder1 = nn.Conv2d(128, 64, 3, stride=1, padding=1)  # b, 1, 28, 28
+        self.decoder2 = nn.Conv2d(128, 32, 3, stride=1, padding=1)
+        self.decoder3 = nn.Conv2d(64, self.out_channels, 3, stride=1, padding=1)
 
-        # DECODER FILTERS
-        self.decoder1 = nn.Conv2d(2 * filters[2], filters[1], 3, stride=1, padding=1)  # b, 1, 28, 28
-        self.dbn1 = nn.BatchNorm2d(filters[1])
-        self.decoder2 = nn.Conv2d(2 * filters[1], filters[0], 3, stride=1, padding=1)
-        self.dbn2 = nn.BatchNorm2d(filters[0])
-        self.decoder3 = nn.Conv2d(2 * filters[0], self.out_channels, 3, stride=1, padding=1)
-        self.dbn3 = nn.BatchNorm2d(self.out_channels)
-
-        # FINAL CONV LAYER
-        self.final_conv = nn.Conv2d(self.out_channels, self.out_channels, 1)
-
-        # RELU
         self.relu = nn.LeakyReLU(negative_slope=RELUSLOPE, inplace=True)
 
-        self.CBAM = CBAM(128)
+        self.CBAM = CBAM(128)  # Use CBAM for the encoder3 output
 
     def forward(self, X_MS, X_PAN):
         if not self.is_DHP_MS:
@@ -241,45 +226,22 @@ class attentionkitenet(nn.Module):
 
         x = torch.cat((X_MS_UP, X_PAN.unsqueeze(1)), dim=1)
 
-        # ENCODER
-        out = self.relu(self.ebn1(self.encoder1(x)))
+        out = self.relu(F.interpolate(self.encoder1(x), scale_factor=(2, 2), mode='bilinear'))
         t1 = out
-
-        out = F.interpolate(out, scale_factor=(2, 2), mode='bilinear')
-        out = self.relu(self.ebn2(self.encoder2(out)))
+        out = self.relu(F.interpolate(self.encoder2(out), scale_factor=(2, 2), mode='bilinear'))
         t2 = out
-
-        out = F.interpolate(out, scale_factor=(2, 2), mode='bilinear')
-        out = self.relu(self.ebn3(self.encoder3(out)))
-        t3 = out
-
+        out = self.relu(F.interpolate(self.encoder3(out), scale_factor=(2, 2), mode='bilinear'))
         out = self.CBAM(out)  # Apply CBAM to the encoder3 output
 
-        # BOTTLENECK
-        out = F.interpolate(out, scale_factor=(2, 2), mode='bilinear')
-        out = self.relu(self.endec_bn(self.endec_conv(out)))
+        out = self.relu(F.max_pool2d(self.decoder1(out), 2, 2))
+        out = torch.cat((t2, out), dim=1)
 
+        out = self.relu(F.max_pool2d(self.decoder2(out), 2, 2))
+        out = torch.cat((t1, out), dim=1)
 
-        # DECODER
-        out = F.max_pool2d(out, 2, 2)
-        out = torch.cat((out, t3), dim=1)
-        out = self.relu(self.dbn1(self.decoder1(out)))
+        out = self.relu(F.max_pool2d(self.decoder3(out), 2, 2))
 
-        out = F.max_pool2d(out, 2, 2)
-        out = torch.cat((out, t2), dim=1)
-        out = self.relu(self.dbn2(self.decoder2(out)))
-
-        out = F.max_pool2d(out, 2, 2)
-        out = torch.cat((out, t1), dim=1)
-        out = self.relu(self.dbn3(self.decoder3(out)))
-
-        # OUTPUT CONV
-        out = self.final_conv(out)
-
-        # FINAL OUTPUT
         out = out + X_MS_UP
-
         output = {"pred": out}
 
         return output
-
