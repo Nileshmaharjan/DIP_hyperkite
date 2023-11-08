@@ -50,20 +50,31 @@ class InverseImagingModel(nn.Module):
         self.feature_maps.append(output)
 
     def forward(self, Y_tilde):
-        batch_size = Y_tilde.size(0)
-        Y_tilde = Y_tilde.view(batch_size, C, 128, 128)
-        conv_output = self.conv_layer(Y_tilde)
+        batch_size =  Y_tilde.size(0)
+        mask = torch.bernoulli(0.5 * torch.ones_like(Y_tilde))  # Generate mask images with probability p=0.5
+        Y_tilde_mod = Y_tilde.view(batch_size, C, 128, 128)
+        conv_output = self.conv_layer(Y_tilde_mod)
         g_output = torch.relu(conv_output)
         fc_output = self.fc_layer(g_output)
+        Y_hat = fc_output
+
+        if fc_output.shape != mask.shape:
+            Y_hat = fc_output.permute(0, 2, 1, 3)
+            Y_hat = Y_hat * mask
+            Y_hat = Y_hat.permute(0, 2, 1, 3)
+        #
+        # else:
+        #     Y_hat = Y_hat * mask
+
 
         # Reshape fc_output for matrix multiplication
-        fc_output = fc_output.view(batch_size, 128 * 128, C)
+        fc_output = Y_hat.view(batch_size, 128 * 128, C)
         fc_output = torch.matmul(fc_output, self.similarity_matrix)
         fc_output = fc_output.view(batch_size, C, 128, 128)  # Adjust dimensions to match the input
         output = self.output_layer(fc_output)
         output = output.permute(0, 2, 1, 3)
 
-        return output
+        return output, Y_hat
 
 # Instantiate the model and send it to the GPU
 k = 3  # Kernel size
@@ -77,14 +88,14 @@ criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop
-num_epochs = 50
+num_epochs = 15
 
 for epoch in range(num_epochs):
     running_loss = 0.0
     for i, batch in enumerate(data_loader):
         inputs = batch.to(device)  # Send the input data to the GPU
         optimizer.zero_grad()
-        outputs = model(inputs)
+        outputs, tilde = model(inputs)
         loss = criterion(outputs, inputs)
         loss.backward()
         optimizer.step()
@@ -93,70 +104,60 @@ for epoch in range(num_epochs):
 
 print("Training complete")
 
-# def visualize_feature_maps(model, input_image):
-#     model.eval()
-#     feature_maps = model.feature_maps
-#     with torch.no_grad():
-#         model(input_image)
-#
-#     num_rows, num_cols = 2, 2  # Set the number of rows and columns for the grid
-#     total_features = min(num_rows * num_cols, feature_maps[0].size(1))
-#
-#     plt.figure(figsize=(6, 6))
-#     for j in range(total_features):
-#         plt.subplot(num_rows, num_cols, j + 1)
-#         plt.imshow(feature_maps[0][j, 0].cpu().detach().numpy(), cmap='viridis')  # Access the list and tensor properly
-#         plt.axis('off')
-#     plt.show()
-
-
-
-def visualize_input_output(model, input_image):
-    model.eval()
-    with torch.no_grad():
-        output_image = model(input_image)
-
-    input_image = input_image[0].permute(1, 2, 0).cpu().detach().numpy()
-    output_image = output_image[0].permute(0, 2, 1).cpu().detach().numpy()
-    print('here')
-
-    plt.figure(figsize=(8, 4))
-    plt.subplot(1, 2, 1)
-    plt.imshow(input_image)
-    plt.title("Input Image")
-    plt.axis('off')
-
-    plt.subplot(1, 2, 2)
-    plt.imshow(output_image)
-    plt.title("Output Image")
-    plt.axis('off')
-
-    plt.show()
 
 import cv2
 
+def visualize_input_output(model, input_images):
+    model.eval()
+    with torch.no_grad():
+        output_images, tildes = model(input_images)
 
-# Load your image using OpenCV
-image = cv2.imread("attention.jpg")  # Replace with the path to your image
+    # Create a figure with 4 subplots
+    # Create a figure with 4 subplots for each image in the batch
+    fig, axes = plt.subplots(input_images.shape[0], 3, figsize=(12, input_images.shape[0] * 4))
 
-# Resize the image to 128x128 pixels
-image = cv2.resize(image, (128, 128))
+    for i in range(input_images.shape[0]):
+        input_image = input_images[i].permute(1, 2, 0).cpu().detach().numpy()
+        tilde_image = tildes[i].permute(1, 2, 0).cpu().detach().numpy()
+        output_image = output_images[i].permute(0, 2, 1).cpu().detach().numpy()
 
-# Convert the image to the PyTorch tensor format
-image = image.transpose(2, 0, 1)  # Change the order of dimensions (H x W x C to C x H x W)
-image_tensor = torch.tensor(image, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
-image_tensor = image_tensor.unsqueeze(0)  # Add an extra dimension for batch size
+        # Plot the input image
+        axes[i, 0].imshow(input_image)
+        axes[i, 0].set_title(f"Reference Image {i + 1}")
+        axes[i, 0].axis('off')
 
-# Now, image_tensor is of size (1, 3, 128, 128)
-input_image = image_tensor.to(device)
+        # Plot the tilde image
+        axes[i, 1].imshow(tilde_image)
+        axes[i, 1].set_title(f"Tilde Input Image {i + 1}")
+        axes[i, 1].axis('off')
 
-# Visualize input and output images
-visualize_input_output(model, input_image)
+        # Plot the output image
+        axes[i, 2].imshow(output_image)
+        axes[i, 2].set_title(f"Output Image {i + 1}")
+        axes[i, 2].axis('off')
+
+    plt.show()
 
 
-# # Create an input image for visualization (replace with your own image)
-# input_image = torch.randn(1, 3, 128, 128).to(device)  # Send the input image to the GPU
+# Load and preprocess your images
+image_paths = ["attention_1.jpg", "attention_2.jpg", "attention_3.jpg", "attention_4.jpg"]  # Replace with your image paths
+input_images = []
 
-# # Visualize feature maps in a 2x2 grid
-# visualize_feature_maps(model, input_image)
+for path in image_paths:
+    image = cv2.imread(path)
+    image = cv2.resize(image, (128, 128))
+    image = image.transpose(2, 0, 1)
+    image_tensor = torch.tensor(image, dtype=torch.float32) / 255.0
+    input_images.append(image_tensor)
+
+input_images = torch.stack(input_images, dim=0).to(device)  # Create a batch of input images
+
+# Visualize input and output images for the batch
+visualize_input_output(model, input_images)
+
+
+
+
+
+
 
