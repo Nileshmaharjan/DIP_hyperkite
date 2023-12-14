@@ -1,8 +1,8 @@
 {
     "name": "pan_transformer",
-    "experim_name": "Experiments/test",
-    "train_dataset": "pavia_dataset",
-    "train_batch_size": 2,
+    "experim_name": "Experiments/botswana_dataset",
+    "train_dataset": "botswana_dataset",
+    "train_batch_size": 4,
     "val_batch_size": 1,
     "num_workers": 0,
     "loss_type": "L1",
@@ -17,7 +17,7 @@
             "weight_decay": 1e-4,
             "momentum": 0.9
         },
-        "step_size": 2000,
+        "step_size": 1400,
         "gamma": 0.1
     },
 
@@ -48,7 +48,7 @@
     },
 
     "botswana_dataset": {
-        "data_dir": "./datasets/botswana/botswana/",
+        "data_dir": "./datasets/botswana/",
         "spectral_bands": 145,
         "LR_size": 40,
         "HR_size": 120,

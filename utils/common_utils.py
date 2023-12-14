@@ -113,92 +113,141 @@ def get_image(path, imsize=-1):
 
     return img, img_np
 
-def get_noise(input_depth, method, spatial_size, poisson_var=None, gaussian_var=None):
+# Random values for W, B, C
+input_depth = 3  # Replace with your actual input depth
+kernel_size = 3  # Replace with your actual kernel size
+D = 64  # Replace with your desired number of kernels
+channels = 3  # Replace with your actual number of channels
+W = torch.randn(kernel_size ** 2 * channels, D)
+B = torch.randn(1, D)
+C = torch.randn(D, channels)
+
+# Random value for mask_prob
+mask_prob = 0.5  # Replace with your desired mask probability
+
+# Second phase with mask option
+
+
+# def fill_noise(noise, noise_type, var):
+#     if noise_type == 'p':
+#         noise += torch.poisson(torch.empty_like(noise).uniform_(0.0, var))
+#     elif noise_type == 'g':
+#         noise += torch.empty_like(noise).normal_(0.0, var)
+#     else:
+#         raise NotImplementedError(f"Noise type {noise_type} not recognized")
+#
+#
+def mask_operation(Y,  mask_prob):
+    """
+    Apply mask operation to prevent identity mapping during optimization.
+
+    Args:
+        Y: Observed image tensor (batch_size x channels x height x width)
+        mask_prob: Probability of mask (p in the text)
+
+    Returns:
+        Masked output tensor
+    """
+    batch_size, channels, height, width = Y.size()
+
+    # Generate mask images
+    mask = torch.empty((batch_size, height, width)).uniform_(0, 1) < mask_prob
+    mask = mask.unsqueeze(1).expand_as(Y)
+
+    # Apply mask to input
+    Y_masked = Y * mask
+
+
+
+    return Y_masked
+
+
+# def get_noise(input_depth, method, reference, spatial_size, mapping_var=None, mask_prob=0.5):
+#     """Returns a pytorch.Tensor of size (1 x `input_depth` x `spatial_size[0]` x `spatial_size[1]`)
+#     initialized with Poisson and Gaussian noise added to it.
+#     Args:
+#         input_depth: number of channels in the tensor
+#         method: `noise` for filling tensor with noise; `meshgrid` for np.meshgrid
+#         spatial_size: spatial size of the tensor to initialize
+#         mapping_var: a factor for mapping noise (None if no mapping noise is desired)
+#         mask_prob: Probability of mask (p in the text)
+#     """
+#
+#     # using just 32 channels of the reference image and then masking them
+#     sliced_reference = reference[:,:input_depth,:, :]
+#
+#     # if isinstance(spatial_size, int):
+#     #     spatial_size = (spatial_size, spatial_size)
+#     # shape = [1, input_depth, spatial_size[0], spatial_size[1]]
+#     # net_input = torch.zeros(shape)
+#     # print('here')
+#     net_input = sliced_reference
+#
+
+#
+#     if mapping_var is not None:
+#         mapping_noise = torch.ones_like(net_input)
+#         net_input += mapping_noise
+#
+#     if mask_prob is not None:
+#         masked_output = mask_operation(net_input, mask_prob)
+#
+#         # Returns from here
+#         return masked_output
+#
+#     if method == 'meshgrid':
+#         assert input_depth == 2
+#         X, Y = np.meshgrid(np.arange(0, spatial_size[1]) / float(spatial_size[1] - 1),
+#                            np.arange(0, spatial_size[0]) / float(spatial_size[0] - 1))
+#         meshgrid = np.concatenate([X[None, :], Y[None, :]])
+#         net_input = np_to_torch(meshgrid)
+#
+#
+#     return net_input
+
+
+# Original
+
+def fill_noise(x, noise_type):
+    """Fills tensor `x` with noise of type `noise_type`."""
+    if noise_type == 'u':
+        x.uniform_()
+    elif noise_type == 'n':
+        x.normal_()
+    else:
+        assert False
+
+
+def get_noise(input_depth, method, spatial_size, noise_type='u', var=1. / 10):
     """Returns a pytorch.Tensor of size (1 x `input_depth` x `spatial_size[0]` x `spatial_size[1]`)
-    initialized with Poisson and Gaussian noise added to it.
+    initialized in a specific way.
     Args:
         input_depth: number of channels in the tensor
-        method: `noise` for filling tensor with noise; `meshgrid` for np.meshgrid
+        method: `noise` for fillting tensor with noise; `meshgrid` for np.meshgrid
         spatial_size: spatial size of the tensor to initialize
-        poisson_var: a factor for Poisson noise (None if no Poisson noise is desired)
-        gaussian_var: a factor for Gaussian noise (None if no Gaussian noise is desired)
+        noise_type: 'u' for uniform; 'n' for normal
+        var: a factor, a noise will be multiplicated by. Basically it is standard deviation scaler.
     """
     if isinstance(spatial_size, int):
         spatial_size = (spatial_size, spatial_size)
-    shape = [1, input_depth, spatial_size[0], spatial_size[1]]
-    net_input = torch.zeros(shape)
+    if method == 'noise':
+        shape = [1, input_depth, spatial_size[0], spatial_size[1]]
+        net_input = torch.zeros(shape)
 
-    if poisson_var is not None:
-        fill_noise(net_input, 'p', poisson_var)  # Add Poisson noise
-
-    if gaussian_var is not None:
-        fill_noise(net_input, 'g', gaussian_var)  # Add Gaussian noise
-
-    if method == 'meshgrid':
+        fill_noise(net_input, noise_type)
+        net_input *= var
+    elif method == 'meshgrid':
         assert input_depth == 2
         X, Y = np.meshgrid(np.arange(0, spatial_size[1]) / float(spatial_size[1] - 1),
                            np.arange(0, spatial_size[0]) / float(spatial_size[0] - 1))
         meshgrid = np.concatenate([X[None, :], Y[None, :]])
         net_input = np_to_torch(meshgrid)
+    else:
+        assert False
+
     return net_input
 
 
-def fill_noise(noise, noise_type, var):
-    """Fill the input tensor `noise` with different types of noise.
-    Args:
-        noise: Input tensor to be filled with noise.
-        noise_type: Type of noise ('u' for uniform, 'n' for normal, 'p' for Poisson, 'g' for Gaussian).
-        var: Standard deviation for Gaussian noise or mean for Poisson noise.
-    """
-    if noise_type == 'u':  # Uniform noise
-        noise.uniform_(-var, var)
-    elif noise_type == 'n':  # Normal (Gaussian) noise
-        noise.normal_(0, var)
-    elif noise_type == 'p':  # Poisson noise
-        poisson_noise = np.random.poisson(var, size=noise.shape)
-        noise = noise + poisson_noise
-    elif noise_type == 'g':  # Gaussian noise with mean 'var'
-        noise.normal_(var, var)
-    else:
-        raise ValueError(
-            "Unsupported noise_type. Use 'u' for uniform, 'n' for normal, 'p' for Poisson, 'g' for Gaussian.")
-
-# def fill_noise(x, noise_type):
-#     """Fills tensor `x` with noise of type `noise_type`."""
-#     if noise_type == 'u':
-#         x.uniform_()
-#     elif noise_type == 'n':
-#         x.normal_()
-#     else:
-#         assert False
-#
-# def get_noise(input_depth, method, spatial_size, noise_type='u', var=1./10):
-#     """Returns a pytorch.Tensor of size (1 x `input_depth` x `spatial_size[0]` x `spatial_size[1]`)
-#     initialized in a specific way.
-#     Args:
-#         input_depth: number of channels in the tensor
-#         method: `noise` for fillting tensor with noise; `meshgrid` for np.meshgrid
-#         spatial_size: spatial size of the tensor to initialize
-#         noise_type: 'u' for uniform; 'n' for normal
-#         var: a factor, a noise will be multiplicated by. Basically it is standard deviation scaler.
-#     """
-#     if isinstance(spatial_size, int):
-#         spatial_size = (spatial_size, spatial_size)
-#     if method == 'noise':
-#         shape = [1, input_depth, spatial_size[0], spatial_size[1]]
-#         net_input = torch.zeros(shape)
-#
-#         fill_noise(net_input, noise_type)
-#         net_input *= var
-#     elif method == 'meshgrid':
-#         assert input_depth == 2
-#         X, Y = np.meshgrid(np.arange(0, spatial_size[1])/float(spatial_size[1]-1), np.arange(0, spatial_size[0])/float(spatial_size[0]-1))
-#         meshgrid = np.concatenate([X[None,:], Y[None,:]])
-#         net_input=  np_to_torch(meshgrid)
-#     else:
-#         assert False
-#
-#     return net_input
 
 def pil_to_np(img_PIL):
     '''Converts image in PIL format to np.array.

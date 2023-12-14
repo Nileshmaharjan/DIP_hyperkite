@@ -7,7 +7,7 @@ from .unet_mod import *
 
 def get_net(input_depth, NET_TYPE, pad, upsample_mode, n_channels=3, act_fun='LeakyReLU', skip_n33d=128, skip_n33u=128, skip_n11=4, num_scales=5, downsample_mode='stride'):
     if NET_TYPE == 'ResNet':
-        print('here')
+        print('ResNet')
         # net = ResNet(
         #     num_input_channels=input_depth, num_output_channels=102,
         #     num_blocks=10, num_channels=16,
@@ -27,7 +27,6 @@ def get_net(input_depth, NET_TYPE, pad, upsample_mode, n_channels=3, act_fun='Le
         # num_scales = 5,
         # skip_n33d = 128,
         # Define hyperparameters to optimize
-        print('here')
 
     elif NET_TYPE == 'texture_nets':
         net = get_texture_nets(inp=input_depth, ratios = [32, 16, 8, 4, 2, 1], fill_noise=False,pad=pad)

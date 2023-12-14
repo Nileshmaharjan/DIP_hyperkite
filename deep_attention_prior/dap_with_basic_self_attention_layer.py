@@ -38,95 +38,39 @@ transform = transforms.Compose([transforms.ToTensor()])
 custom_dataset = CustomDataset(data, transform)
 data_loader = DataLoader(custom_dataset, batch_size=32, shuffle=True)
 
-import torch.nn.functional as F
-
-class DeepAttentionPrior(nn.Module):
-    def __init__(self, k, C, D, N, L):
-        super(DeepAttentionPrior, self).__init__()
-
-        # Embedding layer
-        self.embedding = nn.Conv2d(in_channels=C, out_channels=64, kernel_size=1).to(device)
-
-        # Stack of Convolution and Self Attention Layers
-        self.layers = nn.ModuleList()
-        for _ in range(L):
-            self.layers.append(nn.Sequential(
-                nn.Conv2d(in_channels=D, out_channels=D, kernel_size=k),
-                SelfAttentionLayer(D)
-            ))
-
-        # 1x1 Convolution before Sigmoid
-        self.final_conv = nn.Conv2d(in_channels=D, out_channels=64, kernel_size=1).to(device)
-
-    def forward(self, Y_tilde):
-        # Initial embedding
-        embedded = self.embedding(Y_tilde)
-
-        # Stack of Convolution and Self Attention Layers
-        for layer in self.layers:
-            embedded = layer(embedded)
-
-        # 1x1 Convolution before Sigmoid
-        output = self.final_conv(embedded)
-        output = F.sigmoid(output)
-
-        # Upsample output to match the input size (64x64)
-        output = F.interpolate(output, size=Y_tilde.shape[-2:], mode='bilinear', align_corners=False)
-
-        return output
-
-class SelfAttentionLayer(nn.Module):
-    def __init__(self, D):
-        super(SelfAttentionLayer, self).__init__()
-        self.conv = nn.Conv2d(in_channels=D, out_channels=D, kernel_size=1).to(device)
-        self.similarity_matrix = nn.Parameter(torch.randn(D, D).to(device))
-
-    def forward(self, x):
-        q = self.conv(x).view(x.size(0), -1)
-        k = q
-        v = x.view(x.size(0), -1)
-
-        attn_weights = F.softmax(torch.mm(q, k.t()), dim=-1)
-        attn_output = torch.mm(attn_weights, v).view(x.size())
-
-        return attn_output
-
-
-
-
 class InverseImagingModel(nn.Module):
-    def __init__(self, k, C, D, N, L):
+    def __init__(self, k, C, D, N):
         super(InverseImagingModel, self).__init__()
         self.conv_layer = nn.Conv2d(in_channels=C, out_channels=D, kernel_size=1).to(device)
         self.fc_layer = nn.Conv2d(in_channels=D, out_channels=C, kernel_size=1).to(device)
-        self.output_layer = nn.Conv2d(in_channels=C, out_channels=3, kernel_size=1).to(device)
+        self.output_layer = nn.Conv2d(in_channels=C, out_channels=3, kernel_size=1).to(device)  # Adjust the output channels here
         self.N = N
         self.similarity_matrix = nn.Parameter(torch.randn(C, C).to(device))
         self.feature_maps = []
         self.conv_layer.register_forward_hook(self.hook_fn)
-
-        # Integrate DeepAttentionPrior
-        self.dap = DeepAttentionPrior(k, C, D, N, L)
 
     def hook_fn(self, module, input, output):
         self.feature_maps.append(output)
 
     def forward(self, Y_tilde):
         batch_size = Y_tilde.size(0)
-        # Set a random seed for reproducibility
-        torch.manual_seed(42)
         mask = torch.bernoulli(0.5 * torch.ones_like(Y_tilde))  # Generate mask images with probability p=0.5
         Y_tilde_mod = Y_tilde.view(batch_size, C, 64, 64)
         conv_output = self.conv_layer(Y_tilde_mod)
         g_output = torch.relu(conv_output)
         fc_output = self.fc_layer(g_output)
 
-        # Deep attention prior
-        dap_output = self.dap(fc_output)
+        # Self-attention mechanism
+        q = fc_output.view(batch_size, C, -1)  # query
+        k = q  # key
+        v = g_output.view(batch_size, D, -1)  # value
+
+        attn_weights = torch.nn.functional.softmax(torch.bmm(q.permute(0, 2, 1), k), dim=-1)
+        attn_output = torch.bmm(attn_weights, v.permute(0, 2, 1)).view(batch_size, D, 64, 64)
 
         # With this modified line
         linear_transform = nn.Conv2d(in_channels=D, out_channels=C, kernel_size=1).to(device)
-        attn_output_transformed = linear_transform(dap_output.permute(0, 2, 1, 3))
+        attn_output_transformed = linear_transform(attn_output.permute(0, 2, 1, 3))
         Y_hat = fc_output + attn_output_transformed
 
         if fc_output.shape != mask.shape:
@@ -143,27 +87,19 @@ class InverseImagingModel(nn.Module):
 
         return output, Y_hat
 
-
-#####################
-
-
 # Instantiate the model and send it to the GPU
 k = 3  # Kernel size
 C = 3  # Number of channels in the image
 D = 64  # Number of kernels
 N = data.shape[0]  # Number of instances in the dataset
-L = 4 # Number of layers
-model = InverseImagingModel(k, C, D, N, L).to(device)
-
-
-
+model = InverseImagingModel(k, C, D, N).to(device)
 
 # Define loss function and optimizer
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop
-num_epochs = 20
+num_epochs = 10
 
 for epoch in range(num_epochs):
     running_loss = 0.0

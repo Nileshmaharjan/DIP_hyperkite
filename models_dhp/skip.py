@@ -1,8 +1,8 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from .common import *
-#
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+# from .common import *
+# #
 # def skip(
 #         num_input_channels=32, num_output_channels=102,
 #         num_channels_down=[128, 128, 128, 128, 128], num_channels_up=[128, 128, 128, 128, 128], num_channels_skip=[4, 4, 4, 4, 4],
@@ -130,9 +130,13 @@ from .common import *
 #     return model
 
 
+# Modified Network
+
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .common import *
 
 # Define a dilated convolution block
 def dilated_conv(in_channels, out_channels, kernel_size, stride, dilation, bias=True, pad='reflection'):
@@ -185,7 +189,7 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, dilation, bias=True, pad='reflection'):
         super(ResidualBlock, self).__init__()
         self.conv1 = dilated_conv(in_channels, out_channels, kernel_size, stride, dilation, bias=bias, pad=pad)
-        self.relu = nn.ReLU(inplace=True)
+        self.leaky_relu = nn.LeakyReLU(inplace=True)
         self.attention = SelfAttention(out_channels)
         self.upsample_out = nn.Upsample(scale_factor=2, mode='bilinear')
 
@@ -196,7 +200,7 @@ class ResidualBlock(nn.Module):
     def forward(self, x):
         residual = x
         out = self.conv1(x)
-        out = self.relu(out)
+        out = self.leaky_relu(out)
         out = self.attention(out)
 
         # Upsample 'out' to match the spatial dimensions of 'residual'
@@ -300,6 +304,5 @@ def skip(
 
     if need_sigmoid:
         model.add(nn.Sigmoid())
-    print('here')
 
     return model

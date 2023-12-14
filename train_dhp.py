@@ -98,10 +98,12 @@ for i, data in enumerate(train_loader, 0):
         img_name = image_dict["imgs"][0].split("/")[-1]
         print("= Performing Deep Hyperspectral Prior on =>>> ["+img_name+"] dataset =")
 
-        # Generate input noise tensor
-        poisson_rate = random.uniform(0.01, 0.1)
-        gaussian_std_dev = random.uniform(0.01, 0.1)
-        net_input = get_noise(input_depth, INPUT, (reference.shape[3], reference.shape[2]), poisson_rate,gaussian_std_dev).type(dtype).detach()
+
+        # For modified input
+        #net_input = get_noise(input_depth, INPUT, reference, (reference.shape[3], reference.shape[2])).type(dtype).detach()
+
+        # For original input
+        net_input = get_noise(input_depth, INPUT, (reference.shape[3], reference.shape[2])).type(dtype).detach()
 
         # Get model
         net = get_net(input_depth, n_channels=spectral_bands,
